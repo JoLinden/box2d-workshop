@@ -1,7 +1,9 @@
 
+#include <iostream>
 #include <stdio.h>
 #include <chrono>
 #include <thread>
+#include <set>
 
 #include "imgui/imgui.h"
 #include "imgui_impl_glfw_game.h"
@@ -16,6 +18,30 @@
 GLFWwindow* g_mainWindow = nullptr;
 
 b2World* g_world;
+std::set<b2Body*> bodiesToRemove;
+
+class CollisionListener : public b2ContactListener {
+public:
+    void BeginContact(b2Contact* contact) override {
+        while (contact != nullptr) {
+            if (contact->IsTouching()) {
+                b2Body* bodyA = contact->GetFixtureA()->GetBody();
+                b2Body* bodyB = contact->GetFixtureB()->GetBody();
+                
+                if (bodyA->GetType() == b2_dynamicBody &&
+                    bodyB->GetType() == b2_dynamicBody) {
+                    bodiesToRemove.insert(bodyA);
+                    bodiesToRemove.insert(bodyB);
+                }
+            }
+            contact = contact->GetNext();
+        }
+    }
+
+    void EndContact(b2Contact* contact) override {
+        return;
+    }
+};
 
 void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
@@ -98,6 +124,9 @@ int main()
     g_world->SetDebugDraw(&g_debugDraw);
     CreateUI(g_mainWindow, 20.0f /* font size in pixels */);
 
+    CollisionListener collision;
+    g_world->SetContactListener(&collision);
+
 
     // Some starter objects are created here, such as the ground
     b2Body* ground;
@@ -145,6 +174,11 @@ int main()
 
     // Main application loop
     while (!glfwWindowShouldClose(g_mainWindow)) {
+        for (auto body : bodiesToRemove) {
+            g_world->DestroyBody(body);
+        }
+        bodiesToRemove.clear();
+
         // Use std::chrono to control frame rate. Objective here is to maintain
         // a steady 60 frames per second (no more, hopefully no less)
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
