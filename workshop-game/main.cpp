@@ -1,9 +1,13 @@
-
+#define _USE_MATH_DEFINES
 #include <iostream>
 #include <stdio.h>
 #include <chrono>
 #include <thread>
 #include <set>
+#include <vector>
+#include <time.h>
+#include <math.h>
+#include <stdlib.h>
 
 #include "imgui/imgui.h"
 #include "imgui_impl_glfw_game.h"
@@ -59,9 +63,6 @@ void MouseMotionCallback(GLFWwindow*, double xd, double yd)
 
 void MouseButtonCallback(GLFWwindow* window, int32 button, int32 action, int32 mods)
 {
-    if (action == GLFW_RELEASE) {
-        return;
-    }
     // code for mouse button keys https://www.glfw.org/docs/3.3/group__buttons.html
     // and modifiers https://www.glfw.org/docs/3.3/group__buttons.html
     // action is either GLFW_PRESS or GLFW_RELEASE
@@ -71,7 +72,9 @@ void MouseButtonCallback(GLFWwindow* window, int32 button, int32 action, int32 m
     b2Vec2 ps((float)xd, (float)yd);
     // now convert this position to Box2D world coordinates
     b2Vec2 pw = g_camera.ConvertScreenToWorld(ps);
+}
 
+void create_player(float x, float y) {
     b2Body* box;
     b2PolygonShape box_shape;
     box_shape.SetAsBox(0.4f, 2.0f);
@@ -80,10 +83,58 @@ void MouseButtonCallback(GLFWwindow* window, int32 button, int32 action, int32 m
     box_fd.density = 20.0f;
     box_fd.friction = 0.1f;
     b2BodyDef box_bd;
-    box_bd.type = b2_dynamicBody;
-    box_bd.position.Set(pw.x, pw.y);
+    box_bd.position.Set(x, y);
     box = g_world->CreateBody(&box_bd);
     box->CreateFixture(&box_fd);
+}
+
+void create_wall(b2Vec2 p1, b2Vec2 p2) {
+    b2Body* wall;
+    b2EdgeShape wall_shape;
+    wall_shape.SetTwoSided(p1, p2);
+    b2BodyDef wall_bd;
+    wall = g_world->CreateBody(&wall_bd);
+    wall->CreateFixture(&wall_shape, 0.0f);
+}
+
+void create_ball() {
+    b2Body* ball;
+    b2CircleShape ball_shape;
+    ball_shape.m_radius = 1.0f;
+    b2FixtureDef ball_fd;
+    ball_fd.shape = &ball_shape;
+    ball_fd.density = 20.0f;
+    ball_fd.friction = 0.1f;
+    ball_fd.restitution = 1.0f;
+    b2BodyDef ball_bd;
+    ball_bd.type = b2_dynamicBody;
+    ball_bd.position.Set(0.0f, 20.0f);
+    ball = g_world->CreateBody(&ball_bd);
+    ball->CreateFixture(&ball_fd);
+
+
+    // Calculate a random direction between -45 and 45 deg or -135 and 135 deg with velocity corresponding to below
+    std::vector<int> directions = {0, 15, 30, 45, 135, 150, 175, 180, 195, 210, 225, 315, 330, 345};
+    srand(time(NULL));
+    int random_direction_index = rand() % directions.size();
+    std::cout << directions[random_direction_index] << "\n";
+    float direction = directions[random_direction_index] * M_PI/180.0f;
+    float magnitude = 20.0f;
+    float x = magnitude * cos(direction);
+    float y = magnitude * sin(direction);
+    std::cout << cos(direction) << "\n";
+    std::cout << direction << ": (" << x << ", " << y << ")\n";
+    ball->SetLinearVelocity(b2Vec2(x, y));
+}
+
+void setup_field() {
+    create_wall(b2Vec2(-40.0f, 0.0f), b2Vec2(40.0f, 0.0f));
+    create_wall(b2Vec2(-40.0f, 40.0f), b2Vec2(40.0f, 40.0f));
+
+    create_player(35.0f, 20.0f);
+    create_player(-35.0f, 20.0f);
+
+    create_ball();
 }
 
 int main()
@@ -115,7 +166,7 @@ int main()
 
     // Setup Box2D world and with some gravity
     b2Vec2 gravity;
-    gravity.Set(0.0f, -10.0f);
+    gravity.Set(0.0f, 0.0f);
     g_world = new b2World(gravity);
 
     // Create debug draw. We will be using the debugDraw visualization to create
@@ -127,43 +178,7 @@ int main()
     CollisionListener collision;
     g_world->SetContactListener(&collision);
 
-
-    // Some starter objects are created here, such as the ground
-    b2Body* ground;
-    b2EdgeShape ground_shape;
-    ground_shape.SetTwoSided(b2Vec2(-40.0f, 0.0f), b2Vec2(40.0f, 0.0f));
-    b2BodyDef ground_bd;
-    ground = g_world->CreateBody(&ground_bd);
-    ground->CreateFixture(&ground_shape, 0.0f);
-
-    for (int i = 0; i < 5; i++) {
-        b2Body* box;
-        b2PolygonShape box_shape;
-        box_shape.SetAsBox(0.4f, 2.0f);
-        b2FixtureDef box_fd;
-        box_fd.shape = &box_shape;
-        box_fd.density = 20.0f;
-        box_fd.friction = 0.1f;
-        b2BodyDef box_bd;
-        box_bd.type = b2_dynamicBody;
-        box_bd.position.Set(2.0f*i, 2.0f);
-        box = g_world->CreateBody(&box_bd);
-        box->CreateFixture(&box_fd);
-    }
-
-    b2Body* box;
-    b2PolygonShape box_shape;
-    box_shape.SetAsBox(0.4f, 2.0f);
-    b2FixtureDef box_fd;
-    box_fd.shape = &box_shape;
-    box_fd.density = 20.0f;
-    box_fd.friction = 0.1f;
-    b2BodyDef box_bd;
-    box_bd.type = b2_dynamicBody;
-    box_bd.position.Set(-2.0f, 10.0f);
-    box = g_world->CreateBody(&box_bd);
-    box->SetAngularVelocity(10.0f);
-    box->CreateFixture(&box_fd);
+    setup_field();
 
     // This is the color of our background in RGB components
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -174,11 +189,6 @@ int main()
 
     // Main application loop
     while (!glfwWindowShouldClose(g_mainWindow)) {
-        for (auto body : bodiesToRemove) {
-            g_world->DestroyBody(body);
-        }
-        bodiesToRemove.clear();
-
         // Use std::chrono to control frame rate. Objective here is to maintain
         // a steady 60 frames per second (no more, hopefully no less)
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
