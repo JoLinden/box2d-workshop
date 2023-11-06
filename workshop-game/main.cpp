@@ -4,6 +4,8 @@
 #include <chrono>
 #include <thread>
 #include <set>
+#include <vector>
+#include <memory>
 
 #include "imgui/imgui.h"
 #include "imgui_impl_glfw_game.h"
@@ -19,6 +21,40 @@ GLFWwindow* g_mainWindow = nullptr;
 
 b2World* g_world;
 std::set<b2Body*> bodiesToRemove;
+
+class Character {
+public:
+    Character(int p_size, float x, float y)
+    {
+        size = p_size;
+        // construct the body of our character
+        b2PolygonShape box_shape;
+        box_shape.SetAsBox(p_size / 500.0f, p_size / 500.0f);
+        b2FixtureDef box_fd;
+        box_fd.shape = &box_shape;
+        box_fd.density = 20.0f;
+        box_fd.friction = 0.1f;
+        b2BodyDef box_bd;
+        // stores the points to this object on the b2Body
+        box_bd.userData.pointer = (uintptr_t)this;
+        box_bd.type = b2_dynamicBody;
+        box_bd.position.Set(x, y);
+        body = g_world->CreateBody(&box_bd);
+        body->CreateFixture(&box_fd);
+    }
+
+    virtual ~Character()
+    {
+        // remove body when object is deleted
+        g_world->DestroyBody(body);
+    }
+private:
+    int size;
+    b2Body* body; // the body of our character
+};
+
+std::vector<std::unique_ptr<Character>> characters;
+
 
 class CollisionListener : public b2ContactListener {
 public:
@@ -72,18 +108,8 @@ void MouseButtonCallback(GLFWwindow* window, int32 button, int32 action, int32 m
     // now convert this position to Box2D world coordinates
     b2Vec2 pw = g_camera.ConvertScreenToWorld(ps);
 
-    b2Body* box;
-    b2PolygonShape box_shape;
-    box_shape.SetAsBox(0.4f, 2.0f);
-    b2FixtureDef box_fd;
-    box_fd.shape = &box_shape;
-    box_fd.density = 20.0f;
-    box_fd.friction = 0.1f;
-    b2BodyDef box_bd;
-    box_bd.type = b2_dynamicBody;
-    box_bd.position.Set(pw.x, pw.y);
-    box = g_world->CreateBody(&box_bd);
-    box->CreateFixture(&box_fd);
+    auto c = std::make_unique<Character>(yd + 1, pw.x, pw.y);
+    characters.push_back(std::move(c));
 }
 
 int main()
@@ -135,35 +161,6 @@ int main()
     b2BodyDef ground_bd;
     ground = g_world->CreateBody(&ground_bd);
     ground->CreateFixture(&ground_shape, 0.0f);
-
-    for (int i = 0; i < 5; i++) {
-        b2Body* box;
-        b2PolygonShape box_shape;
-        box_shape.SetAsBox(0.4f, 2.0f);
-        b2FixtureDef box_fd;
-        box_fd.shape = &box_shape;
-        box_fd.density = 20.0f;
-        box_fd.friction = 0.1f;
-        b2BodyDef box_bd;
-        box_bd.type = b2_dynamicBody;
-        box_bd.position.Set(2.0f*i, 2.0f);
-        box = g_world->CreateBody(&box_bd);
-        box->CreateFixture(&box_fd);
-    }
-
-    b2Body* box;
-    b2PolygonShape box_shape;
-    box_shape.SetAsBox(0.4f, 2.0f);
-    b2FixtureDef box_fd;
-    box_fd.shape = &box_shape;
-    box_fd.density = 20.0f;
-    box_fd.friction = 0.1f;
-    b2BodyDef box_bd;
-    box_bd.type = b2_dynamicBody;
-    box_bd.position.Set(-2.0f, 10.0f);
-    box = g_world->CreateBody(&box_bd);
-    box->SetAngularVelocity(10.0f);
-    box->CreateFixture(&box_fd);
 
     // This is the color of our background in RGB components
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -243,6 +240,8 @@ int main()
     }
 
     // Terminate the program if it reaches here
+    characters.clear();
+
     glfwTerminate();
     g_debugDraw.Destroy();
     delete g_world;
