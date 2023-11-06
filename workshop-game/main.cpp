@@ -20,13 +20,15 @@
 GLFWwindow* g_mainWindow = nullptr;
 
 b2World* g_world;
-std::set<b2Body*> bodiesToRemove;
 
 class Character {
 public:
+    bool deleteOnTick;
+
     Character(int p_size, float x, float y)
     {
         size = p_size;
+        deleteOnTick = false;
         // construct the body of our character
         b2PolygonShape box_shape;
         box_shape.SetAsBox(p_size / 500.0f, p_size / 500.0f);
@@ -48,6 +50,13 @@ public:
         // remove body when object is deleted
         g_world->DestroyBody(body);
     }
+
+    void OnCollision(const Character* other) {
+        //std::cout << "Two colliding objects size " << size << " and size " << other->size << "\n";
+        if (size < other->size) {
+            this->deleteOnTick = true;
+        }
+    }
 private:
     int size;
     b2Body* body; // the body of our character
@@ -58,26 +67,24 @@ std::vector<std::unique_ptr<Character>> characters;
 
 class CollisionListener : public b2ContactListener {
 public:
-    void BeginContact(b2Contact* contact) override {
-        while (contact != nullptr) {
-            if (contact->IsTouching()) {
-                b2Body* bodyA = contact->GetFixtureA()->GetBody();
-                b2Body* bodyB = contact->GetFixtureB()->GetBody();
-                
-                if (bodyA->GetType() == b2_dynamicBody &&
-                    bodyB->GetType() == b2_dynamicBody) {
-                    bodiesToRemove.insert(bodyA);
-                    bodiesToRemove.insert(bodyB);
-                }
-            }
-            contact = contact->GetNext();
+    void BeginContact(b2Contact* contact) override
+    {
+        // if any of the two colliding bodies are not Characters (i.e. it is the floor object), stop processing
+        if (contact->GetFixtureA()->GetBody()->GetUserData().pointer == NULL ||
+            contact->GetFixtureB()->GetBody()->GetUserData().pointer == NULL
+            ) {
+            // stop processing
+            return;
         }
-    }
-
-    void EndContact(b2Contact* contact) override {
-        return;
+        // retrieve our two character objects
+        Character* character1 = (Character*)contact->GetFixtureA()->GetBody()->GetUserData().pointer;
+        Character* character2 = (Character*)contact->GetFixtureB()->GetBody()->GetUserData().pointer;
+        // call our new function
+        character1->OnCollision(character2);
+        character2->OnCollision(character1);
     }
 };
+
 
 void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
@@ -171,10 +178,16 @@ int main()
 
     // Main application loop
     while (!glfwWindowShouldClose(g_mainWindow)) {
-        for (auto body : bodiesToRemove) {
-            g_world->DestroyBody(body);
-        }
-        bodiesToRemove.clear();
+
+        // Remove all characters marked for deletion
+        characters.erase(
+            remove_if(
+                characters.begin(),
+                characters.end(),
+                [&](std::unique_ptr<Character> &c) {
+                    return c->deleteOnTick;
+                }),
+            characters.end());
 
         // Use std::chrono to control frame rate. Objective here is to maintain
         // a steady 60 frames per second (no more, hopefully no less)
