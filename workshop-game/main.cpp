@@ -47,10 +47,27 @@ public:
         world->DestroyBody(body);
     }
 
-    void OnCollision(const Character* other) {
-        //std::cout << "Two colliding objects size " << size << " and size " << other->size << "\n";
+    void onCollision(const Character* other) {
         if (size < other->size) {
             this->deleteOnTick = true;
+        }
+    }
+
+    void jump() {
+        b2ContactEdge* contacts = body->GetContactList();
+
+        if (contacts != nullptr) {
+            b2Vec2 jumpForce(0.0f, body->GetMass() * 5);
+            body->ApplyLinearImpulseToCenter(jumpForce, true);
+        }
+    }
+
+    void move(int direction) {
+        b2ContactEdge* contacts = body->GetContactList();
+
+        if (contacts != nullptr) {
+            b2Vec2 moveForce(body->GetMass() * 2 * direction, 0.0f);
+            body->ApplyLinearImpulseToCenter(moveForce, true);
         }
     }
 private:
@@ -82,8 +99,8 @@ public:
         Character* character1 = (Character*)contact->GetFixtureA()->GetBody()->GetUserData().pointer;
         Character* character2 = (Character*)contact->GetFixtureB()->GetBody()->GetUserData().pointer;
         // call our new function
-        character1->OnCollision(character2);
-        character2->OnCollision(character1);
+        character1->onCollision(character2);
+        character2->onCollision(character1);
     }
 };
 
@@ -92,6 +109,26 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
 {
     // code for keys here https://www.glfw.org/docs/3.3/group__keys.html
     // and modifiers https://www.glfw.org/docs/3.3/group__mods.html
+
+    GameContext* context = (GameContext*)glfwGetWindowUserPointer(window);
+
+    if (action == GLFW_PRESS && key == GLFW_KEY_UP) {
+        for (auto& c : context->characters) {
+            c->jump();
+        }
+    }
+
+    if (action == GLFW_REPEAT && key == GLFW_KEY_LEFT) {
+        for (auto& c : context->characters) {
+            c->move(-1);
+        }
+    }
+
+    if (action == GLFW_REPEAT && key == GLFW_KEY_RIGHT) {
+        for (auto& c : context->characters) {
+            c->move(1);
+        }
+    }
 }
 
 void MouseMotionCallback(GLFWwindow*, double xd, double yd)
