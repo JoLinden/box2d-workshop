@@ -16,17 +16,13 @@
 
 #include "box2d/box2d.h"
 
-// GLFW main window pointer
-GLFWwindow* g_mainWindow = nullptr;
-
-b2World* g_world;
-
 class Character {
 public:
     bool deleteOnTick;
 
-    Character(int p_size, float x, float y)
+    Character(b2World* g_world, int p_size, float x, float y)
     {
+        world = g_world;
         size = p_size;
         deleteOnTick = false;
         // construct the body of our character
@@ -41,14 +37,14 @@ public:
         box_bd.userData.pointer = (uintptr_t)this;
         box_bd.type = b2_dynamicBody;
         box_bd.position.Set(x, y);
-        body = g_world->CreateBody(&box_bd);
+        body = world->CreateBody(&box_bd);
         body->CreateFixture(&box_fd);
     }
 
     virtual ~Character()
     {
         // remove body when object is deleted
-        g_world->DestroyBody(body);
+        world->DestroyBody(body);
     }
 
     void OnCollision(const Character* other) {
@@ -60,10 +56,16 @@ public:
 private:
     int size;
     b2Body* body; // the body of our character
+    b2World* world;
 };
 
-std::vector<std::unique_ptr<Character>> characters;
-
+class GameContext {
+public:
+    // GLFW main window pointer
+    GLFWwindow* mainWindow = nullptr;
+    b2World* world;
+    std::vector<std::unique_ptr<Character>> characters;
+};
 
 class CollisionListener : public b2ContactListener {
 public:
@@ -109,14 +111,17 @@ void MouseButtonCallback(GLFWwindow* window, int32 button, int32 action, int32 m
     // and modifiers https://www.glfw.org/docs/3.3/group__buttons.html
     // action is either GLFW_PRESS or GLFW_RELEASE
     double xd, yd;
+
+    GameContext* context = (GameContext*)glfwGetWindowUserPointer(window);
+
     // get the position where the mouse was pressed
-    glfwGetCursorPos(g_mainWindow, &xd, &yd);
+    glfwGetCursorPos(context->mainWindow, &xd, &yd);
     b2Vec2 ps((float)xd, (float)yd);
     // now convert this position to Box2D world coordinates
     b2Vec2 pw = g_camera.ConvertScreenToWorld(ps);
 
-    auto c = std::make_unique<Character>(yd + 1, pw.x, pw.y);
-    characters.push_back(std::move(c));
+    auto c = std::make_unique<Character>(context->world, yd + 1, pw.x, pw.y);
+    context->characters.push_back(std::move(c));
 }
 
 int main()
@@ -128,20 +133,22 @@ int main()
         return -1;
     }
 
-    g_mainWindow = glfwCreateWindow(g_camera.m_width, g_camera.m_height, "My game", NULL, NULL);
+    GameContext context;
+    context.mainWindow = glfwCreateWindow(g_camera.m_width, g_camera.m_height, "My game", NULL, NULL);
+    glfwSetWindowUserPointer(context.mainWindow, &context);
 
-    if (g_mainWindow == NULL) {
-        fprintf(stderr, "Failed to open GLFW g_mainWindow.\n");
+    if (context.mainWindow == NULL) {
+        fprintf(stderr, "Failed to open GLFW context.mainWindow.\n");
         glfwTerminate();
         return -1;
     }
 
     // Set callbacks using GLFW
-    glfwSetMouseButtonCallback(g_mainWindow, MouseButtonCallback);
-    glfwSetKeyCallback(g_mainWindow, KeyCallback);
-    glfwSetCursorPosCallback(g_mainWindow, MouseMotionCallback);
+    glfwSetMouseButtonCallback(context.mainWindow, MouseButtonCallback);
+    glfwSetKeyCallback(context.mainWindow, KeyCallback);
+    glfwSetCursorPosCallback(context.mainWindow, MouseMotionCallback);
 
-    glfwMakeContextCurrent(g_mainWindow);
+    glfwMakeContextCurrent(context.mainWindow);
 
     // Load OpenGL functions using glad
     int version = gladLoadGL(glfwGetProcAddress);
@@ -149,16 +156,16 @@ int main()
     // Setup Box2D world and with some gravity
     b2Vec2 gravity;
     gravity.Set(0.0f, -10.0f);
-    g_world = new b2World(gravity);
+    context.world = new b2World(gravity);
 
     // Create debug draw. We will be using the debugDraw visualization to create
     // our games. Debug draw calls all the OpenGL functions for us.
     g_debugDraw.Create();
-    g_world->SetDebugDraw(&g_debugDraw);
-    CreateUI(g_mainWindow, 20.0f /* font size in pixels */);
+    context.world->SetDebugDraw(&g_debugDraw);
+    CreateUI(context.mainWindow, 20.0f /* font size in pixels */);
 
     CollisionListener collision;
-    g_world->SetContactListener(&collision);
+    context.world->SetContactListener(&collision);
 
 
     // Some starter objects are created here, such as the ground
@@ -166,7 +173,7 @@ int main()
     b2EdgeShape ground_shape;
     ground_shape.SetTwoSided(b2Vec2(-40.0f, 0.0f), b2Vec2(40.0f, 0.0f));
     b2BodyDef ground_bd;
-    ground = g_world->CreateBody(&ground_bd);
+    ground = context.world->CreateBody(&ground_bd);
     ground->CreateFixture(&ground_shape, 0.0f);
 
     // This is the color of our background in RGB components
@@ -177,26 +184,26 @@ int main()
     std::chrono::duration<double> sleepAdjust(0.0);
 
     // Main application loop
-    while (!glfwWindowShouldClose(g_mainWindow)) {
+    while (!glfwWindowShouldClose(context.mainWindow)) {
 
         // Remove all characters marked for deletion
-        characters.erase(
+        context.characters.erase(
             remove_if(
-                characters.begin(),
-                characters.end(),
+                context.characters.begin(),
+                context.characters.end(),
                 [&](std::unique_ptr<Character> &c) {
                     return c->deleteOnTick;
                 }),
-            characters.end());
+            context.characters.end());
 
         // Use std::chrono to control frame rate. Objective here is to maintain
         // a steady 60 frames per second (no more, hopefully no less)
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
 
-        glfwGetWindowSize(g_mainWindow, &g_camera.m_width, &g_camera.m_height);
+        glfwGetWindowSize(context.mainWindow, &g_camera.m_width, &g_camera.m_height);
 
         int bufferWidth, bufferHeight;
-        glfwGetFramebufferSize(g_mainWindow, &bufferWidth, &bufferHeight);
+        glfwGetFramebufferSize(context.mainWindow, &bufferWidth, &bufferHeight);
         glViewport(0, 0, bufferWidth, bufferHeight);
 
         // Clear previous frame (avoid creates shadows)
@@ -221,14 +228,14 @@ int main()
 
         // When we call Step(), we run the simulation for one frame
         float timeStep = 60 > 0.0f ? 1.0f / 60 : float(0.0f);
-        g_world->Step(timeStep, 8, 3);
+        context.world->Step(timeStep, 8, 3);
 
         // Render everything on the screen
-        g_world->DebugDraw();
+        context.world->DebugDraw();
         g_debugDraw.Flush();
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(g_mainWindow);
+        glfwSwapBuffers(context.mainWindow);
 
         // Process events (mouse and keyboard) and call the functions we
         // registered before.
@@ -253,11 +260,11 @@ int main()
     }
 
     // Terminate the program if it reaches here
-    characters.clear();
+    context.characters.clear();
 
     glfwTerminate();
     g_debugDraw.Destroy();
-    delete g_world;
+    delete context.world;
 
     return 0;
 }
